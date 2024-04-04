@@ -26,8 +26,8 @@ def generate_sitemap(domain):
     def crawl(url, priority = 1.0):    
         nonlocal count  # Access the count variable from the outer function
 
-        if count >= 10:  # Check if we have crawled 100 links
-            return
+        # if count >= 10:  # Check if we have crawled 100 links
+        #     return
 
         if url in visited:      
             return    
