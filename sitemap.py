@@ -4,8 +4,6 @@ from datetime import datetime
 from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
 
-# priority = 1.0
-
 def get_internal_links(url):
     internal_links = set()
     response = requests.get(url)
@@ -13,50 +11,53 @@ def get_internal_links(url):
     
     for link in soup.find_all('a', href=True):
         href = link.get('href')
-        if href.startswith('/') or url in href:
+        if href.startswith('/') or href.startswith(domain):
             internal_links.add(urljoin(url, href))
     
     return internal_links
 
-def generate_sitemap(domain):  
-    visited = set()
-    sitemap = {}
-    count = 0  # Initialize a counter to keep track of the number of links crawled
-
-    def crawl(url, priority = 1.0):    
-        nonlocal count  # Access the count variable from the outer function
-
-        # if count >= 10:  # Check if we have crawled 100 links
-        #     return
-
-        if url in visited:      
-            return    
-        
-        print(url, priority)    
-        visited.add(url)    
-        internal_links = get_internal_links(url)    
-        sitemap[url] = internal_links
-
-        for link in internal_links:      
-            if link not in visited:        
-                if priority > 0:          
-                    new_priority = max(priority - 0.1, 0.9)        
-                else:          
-                    new_priority = -0.1        
-                crawl(link, new_priority)    
-                count += 1  # Increment the counter after crawling a new link
-
-    crawl(domain)  
-    return sitemap
-
-def calculate_priority(url, domain):
+def calculate_priority(url, link):
     if url == domain:
-        return 1.0
-    elif domain in url:
-        depth = url[len(domain):].count('/') + 1
-        return max(0.9 - 0.1 * (depth - 1), 0.1)
+        return 0.9
+    elif url not in link:
+        return 0.5
+    elif "page" in link:
+        return 0.6
+    elif link.count('/') > 4:
+        return 0.8
     else:
-        return -0.1
+        return 0.7
+
+def generate_sitemap(domain):
+    visited = set()
+    visited.add(domain)
+    sitemap = {}
+    page_count = 0
+    link_count = 1
+    
+    def crawl(url):
+        nonlocal page_count, link_count
+        
+        page_count += 1
+        print(f"{page_count} pages found")
+        visited.add(url)
+        
+        internal_links = get_internal_links(url)
+        sitemap[url] = internal_links
+        
+        for link in internal_links.copy():
+            if link in visited or "setCurrencyId" in link:
+                sitemap[url].remove(link)
+        
+        if len(sitemap[url]):
+            for link in sitemap[url]:
+                link_count += len(sitemap[url])
+                print(f"{link_count} links found")
+                crawl(link)
+            
+    crawl(domain)
+    
+    return sitemap
 
 domain = 'https://www.blisscomputers.net/'
 sitemap = generate_sitemap(domain)
@@ -75,19 +76,7 @@ lastmod_element.text = datetime.now().strftime("%Y-%m-%d")
 priority_element = ET.SubElement(url_element, "priority")
 priority_element.text = '1.0'
 
-for page, links in sitemap.items():
-    # url_element = ET.SubElement(root, "url")
-    
-    # loc_element = ET.SubElement(url_element, "loc")
-    # loc_element.text = page
-    
-    # lastmod_element = ET.SubElement(url_element, "lastmod")
-    # lastmod_element.text = datetime.now().strftime("%Y-%m-%d")
-    
-    # priority = calculate_priority(page, domain)
-    # priority_element = ET.SubElement(url_element, "priority")
-    # priority_element.text = str(priority)
-    
+for page, links in sorted(sitemap.items(), key=lambda x: max((calculate_priority(x[0], link) for link in x[1]), default=0), reverse=True):
     for link in links:
         url_element = ET.SubElement(root, "url")
         
@@ -97,11 +86,8 @@ for page, links in sitemap.items():
         lastmod_element = ET.SubElement(url_element, "lastmod")
         lastmod_element.text = datetime.now().strftime("%Y-%m-%d")
         
-        priority = calculate_priority(page, domain)
         priority_element = ET.SubElement(url_element, "priority")
-        priority_element.text = str(priority)
-        # child_loc = ET.SubElement(url_element, "loc")
-        # child_loc.text = link
+        priority_element.text = str(calculate_priority(page, link))
 
 tree = ET.ElementTree(root)
 tree.write(f'sitemap_{datetime.now().strftime("%Y-%m-%d")}.xml', encoding="utf-8", xml_declaration=True)
