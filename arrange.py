@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 
 # Parse the XML file
-tree = ET.parse('sitemap_2024-04-05.xml')
+tree = ET.parse('sitemap_test.xml')
 root = tree.getroot()
 
 # Extract the url elements and their priority values
