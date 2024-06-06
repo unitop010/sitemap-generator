@@ -1,11 +1,14 @@
 import tkinter as tk
 from tkinter import *
 from tkinter import messagebox, filedialog
-import requests
+import requests, os
 from bs4 import BeautifulSoup
 from datetime import datetime
 from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
+import sys
+
+sys.setrecursionlimit(999999999)
 
 class StatusBar(tk.Frame):
     def __init__(self, master):
@@ -72,11 +75,13 @@ class SitemapGeneratorApp(tk.Tk):
         return internal_links
 
     def calculate_priority(self, url, link, domain):
-        if url == domain:
+        keys_list = list(self.sitemap.keys())
+        
+        if keys_list[url] == domain:
             return 0.9
         elif "page" in link:
             return 0.6
-        elif url not in link:
+        elif keys_list[url] not in link:
             return 0.5
         elif link.count('/') > 4:
             return 0.8
@@ -85,31 +90,29 @@ class SitemapGeneratorApp(tk.Tk):
 
     def crawl(self, url, domain):
         self.page_count += 1
-        # print(f"{self.page_count} pages found")
+        print(f"{self.page_count} pages found")
         self.visited.add(url)
         
         if self.count >= 10:  # Check if we have crawled 100 links
             return
         
         internal_links = self.get_internal_links(url, domain)
-        self.sitemap[url] = internal_links
         internal_links = list(set(internal_links))
+        self.sitemap[url] = internal_links
         sitemap_items = list(self.sitemap.items())
         
-        for link in internal_links.copy():
+        for link in internal_links:
             if link in self.visited or "setCurrencyId" in link or "image" in link:
-                self.sitemap[url].remove(link)
+                self.sitemap[url] = [item for item in self.sitemap[url] if item != link]
                 
             for index, (key, value) in enumerate(sitemap_items[:-1]):  # Exclude the last sitemap item
-                if isinstance(value, set) and link in value:
-                    print('removed')
-                    # self.sitemap[url].remove(link)
+                if isinstance(value, list) and link in value:
                     self.sitemap[url] = [item for item in self.sitemap[url] if item != link]
         
         if len(self.sitemap[url]):
             for link in self.sitemap[url]:
                 self.link_count += len(self.sitemap[url])
-                # print(f"{self.link_count} links found")
+                print(f"{self.link_count} links found")
                 self.count += 1  # Increment the counter after crawling a new link
                 self.crawl(link, domain)
 
@@ -121,22 +124,28 @@ class SitemapGeneratorApp(tk.Tk):
         domain = self.entry.get()
         sitemap = self.generate_sitemap(domain)
         
-        root = ET.Element("urlset")
-        root.set("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9")
-        
-        url_element = ET.SubElement(root, "url")
-        
-        loc_element = ET.SubElement(url_element, "loc")
-        loc_element.text = domain
-        
-        lastmod_element = ET.SubElement(url_element, "lastmod")
-        lastmod_element.text = datetime.now().strftime("%Y-%m-%d")
-        
-        priority_element = ET.SubElement(url_element, "priority")
-        priority_element.text = '1.0'
-        
-        for page, links in sorted(sitemap.items(), key=lambda x: max((self.calculate_priority(x[0], link, domain) for link in x[1]), default=0), reverse=True):
-            for link in links:
+        links_per_file = 50
+        sitemap_links = [link for page, links in sitemap.items() for link in links]
+        sitemap_chunks = [sitemap_links[i:i + links_per_file] for i in range(0, len(sitemap_links), links_per_file)]
+        print(len(sitemap_links))
+        for index, chunk in enumerate(sitemap_chunks):
+            root = ET.Element("urlset")
+            root.set("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9")
+            
+            # Add the specified item at the beginning of the first file
+            if index == 0:
+                url_element = ET.SubElement(root, "url")
+                
+                loc_element = ET.SubElement(url_element, "loc")
+                loc_element.text = domain
+                
+                lastmod_element = ET.SubElement(url_element, "lastmod")
+                lastmod_element.text = datetime.now().strftime("%Y-%m-%d")
+                
+                priority_element = ET.SubElement(url_element, "priority")
+                priority_element.text = '1.0'
+            
+            for link in chunk:
                 url_element = ET.SubElement(root, "url")
                 
                 loc_element = ET.SubElement(url_element, "loc")
@@ -146,13 +155,21 @@ class SitemapGeneratorApp(tk.Tk):
                 lastmod_element.text = datetime.now().strftime("%Y-%m-%d")
                 
                 priority_element = ET.SubElement(url_element, "priority")
-                priority_element.text = str(self.calculate_priority(page, link, domain))
+                priority_element.text = str(self.calculate_priority(index, link, domain))
+            
+            tree = ET.ElementTree(root)
+            folder_name = f'sitemap_{datetime.now().strftime("%Y-%m-%d")}'
+            os.makedirs(folder_name, exist_ok=True)
+            
+            if index == 0:
+                file_name = os.path.join(folder_name, "sitemap.xml")
+            else:
+                file_name = os.path.join(folder_name, f"sitemap{index}.xml")
+            
+            if file_name:
+                tree.write(file_name, encoding="utf-8", xml_declaration=True)
         
-        tree = ET.ElementTree(root)
-        file_name = filedialog.asksaveasfilename(defaultextension=".xml", filetypes=[("XML files", "*.xml")])
-        if file_name:
-            tree.write(file_name, encoding="utf-8", xml_declaration=True)
-            messagebox.showinfo("Sitemap Generated", f"Sitemap saved to {file_name}")
+        messagebox.showinfo("Sitemaps Generated", f"Sitemaps split and saved in the folder: {folder_name}")
     
     def clickExitButton(self):
         exit()

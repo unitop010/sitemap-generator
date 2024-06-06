@@ -3,6 +3,9 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
+import sys
+
+sys.setrecursionlimit(999999999)
 
 def get_internal_links(url):
     internal_links = set()
@@ -12,7 +15,8 @@ def get_internal_links(url):
     for link in soup.find_all('a', href=True):
         href = link.get('href')
         if href.startswith('/') or href.startswith(domain):
-            internal_links.add(urljoin(url, href))
+            if "setCurrencyId" not in href and "image" not in href:
+                internal_links.add(urljoin(url, href))
     
     return internal_links
 
@@ -40,7 +44,7 @@ def generate_sitemap(domain):
         nonlocal count  # Access the count variable from the outer function
         nonlocal page_count, link_count
         
-        if count >= 100:  # Check if we have crawled 100 links
+        if count >= 10:  # Check if we have crawled 100 links
             return
         
         page_count += 1
